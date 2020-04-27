@@ -1763,7 +1763,7 @@ class eCommerceSynchro
 
                             $price_base_type = $this->eCommerceSite->ecommerce_price_type;
                             if (isset($productArray['price_base_type'])) $price_base_type = $productArray['price_base_type'];
-				
+
                             if ($price_base_type_org != $price_base_type ||
                                 $price_org != $productArray['price'] ||
                                 (isset($productArray['price_min']) && $price_min_org != $productArray['price_min']) ||
@@ -2766,11 +2766,14 @@ class eCommerceSynchro
                     }
 
                     if (!$error && !empty($this->eCommerceSite->parameters['order_actions']['create_invoice']) && !empty($commandeArray['billed'])) {
+
+                        dol_syslog("Woosync - Invoice creation");
                         $ref_ext = 'eCommerce-' . $this->eCommerceSite->id . '-' . $dBCommande->ref_client;
                         $dBInvoice = new Facture($this->db);
 
                         $result = $dBInvoice->fetch('', '', $ref_ext);
                         if ($result == 0) {
+                            dol_syslog("Woosync - No Invoice for the ref - create it");
                             // Fetch order
                             $dBCommande->fetch($dBCommande->id);
                             foreach ($dBCommande->lines as $line_id => $line) {
@@ -2781,6 +2784,7 @@ class eCommerceSynchro
                             }
 
                             // Get order contacts
+                            dol_syslog("Woosync - Get contact for this order");
                             $order_contacts = array();
                             $sql = "SELECT ctc.code, ctc.source, ec.fk_socpeople FROM " . MAIN_DB_PREFIX . "element_contact as ec, " . MAIN_DB_PREFIX . "c_type_contact as ctc";
                             $sql .= " WHERE element_id = " . $dBCommande->id . " AND ec.fk_c_type_contact = ctc.rowid AND ctc.element = '" . $dBCommande->element . "'";
@@ -2796,6 +2800,7 @@ class eCommerceSynchro
                             }
 
                             if (!$error && empty($this->eCommerceSite->parameters['order_actions']['create_order'])) {
+                              dol_syslog("Woosync - Dolibar command empty - create it");
                                 $this->db->rollback();
                                 $this->db->begin();
 
@@ -2816,6 +2821,7 @@ class eCommerceSynchro
                                 $fake_order_id--;
 
                                 //eCommerce create
+                                dol_syslog("Woosync - Create ecommmerce ? ");
                                 $this->eCommerceCommande->fk_site = $this->eCommerceSite->id;
                                 $this->eCommerceCommande->fk_commande = $fake_order_id;
                                 $this->eCommerceCommande->remote_id = $commandeArray['remote_id'];
@@ -2830,6 +2836,7 @@ class eCommerceSynchro
 
                             $fk_account = 0;
                             if (!$error && $conf->banque->enabled && (!empty($ecommerceSelectedPaymentGateway['create_invoice_payment']) || !empty($ecommerceSelectedPaymentGateway['create_supplier_invoice_payment']))) {
+                                dol_syslog("Woosync - Create invoice payement ");
                                 if (!isset($ecommerceSelectedPaymentGateway['bank_account_id'])) {
                                     $error++;
                                     $msg_error = $this->langs->trans('ECommerceSynchCommandeErrorPaymentGatewayBankNotFound', $ref_ext);
@@ -2846,6 +2853,7 @@ class eCommerceSynchro
                             }
 
                             if (!$error) {
+                                dol_syslog("Woosync - Create invoice user  ");
                                 // Create invoice
                                 $dBInvoice->socid = $dBCommande->socid;
                                 $dBInvoice->type = Facture::TYPE_STANDARD;
@@ -2864,7 +2872,9 @@ class eCommerceSynchro
                                 }
 
                                 $id = $dBInvoice->create($user);
+                                dol_syslog("Woosync - Create invoice user ");
                                 if ($id > 0) {
+                                    dol_syslog("Woosync - Create invoice get contact ");
                                     // Copy contacts
                                     foreach ($order_contacts as $contact_infos) {
                                         $dBInvoice->add_contact($contact_infos['fk_socpeople'], $contact_infos['code'], $contact_infos['source']);    // May failed because of duplicate key or because code of contact type does not exists for new object
@@ -2954,7 +2964,7 @@ class eCommerceSynchro
                                             }
                                         }
                                     }
-
+                                    dol_syslog("Woosync - Create invoice update stock ");
                                     if (!$error && !empty($conf->global->STOCK_CALCULATE_ON_BILL) && $this->eCommerceSite->stock_sync_direction == 'ecommerce2dolibarr') {
                                         if (empty($conf->global->STOCK_SUPPORTS_SERVICES)) {
                                             $qualified_for_stock_change = $dBInvoice->hasProductsOrServices(2);
@@ -2971,12 +2981,15 @@ class eCommerceSynchro
                                     }
 
                                     if (!$error) {
+                                      dol_syslog("Woosync - Validate invoice");
                                         // Validate invoice
                                         $result = $dBInvoice->validate($user, '', $this->eCommerceSite->fk_warehouse > 0 ? $this->eCommerceSite->fk_warehouse : 0);
                                         if ($result >= 0) {
+                                            dol_syslog("Woosync - Invoice validated");
                                             // Define output language
                                             $model = $dBInvoice->modelpdf;
                                             if (!empty($model) && empty($conf->global->MAIN_DISABLE_PDF_AUTOUPDATE) && empty($this->eCommerceSite->parameters['order_actions']['create_invoice_associate_payment'])) {
+                                                dol_syslog("Woosync - Invoice prepare pdf");
                                                 $outputlangs = $this->langs;
                                                 $newlang = '';
                                                 if ($conf->global->MAIN_MULTILANGS && empty($newlang)) $newlang = $dBInvoice->thirdparty->default_lang;
@@ -2990,6 +3003,7 @@ class eCommerceSynchro
                                                 $hidedetails = !empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS) ? 1 : 0;
                                                 $hidedesc = !empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DESC) ? 1 : 0;
                                                 $hideref = !empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_REF) ? 1 : 0;
+                                                dol_syslog("Woosync - Invoice generate pdf");
                                                 $result = $dBInvoice->generateDocument($model, $outputlangs, $hidedetails, $hidedesc, $hideref);
                                                 if ($result < 0) {
                                                     $msg_error = $this->langs->trans('ECommerceSynchCommandeErrorGenerateInvoiceDocument', $ref_ext) . ' ' . $dBInvoice->errorsToString();
@@ -3007,6 +3021,7 @@ class eCommerceSynchro
                                     }
 
                                     if (!$error) {
+                                        dol_syslog("Woosync - Create payement");
                                         if (!empty($ecommerceSelectedPaymentGateway['create_invoice_payment'])) {
                                             // Creation of payment line
                                             $paiement = new Paiement($this->db);
@@ -3164,6 +3179,7 @@ class eCommerceSynchro
 
                                     // Auto send invoice by mail
                                     if (!$error && !empty($this->eCommerceSite->parameters['order_actions']['send_invoice_by_mail'])) {
+                                      dol_syslog("Woosync - Invoice send mail");
                                         $sendto = trim($commandeArray['socpeopleCommande']['email']);
                                         if (empty($sendto)) {
                                             $msg_error = $this->langs->trans('ECommerceSynchCommandeErrorSendInvoiceEmailEmpty', $ref_ext);
@@ -3178,6 +3194,7 @@ class eCommerceSynchro
                                         }
 
                                         if (!$error) {
+                                            dol_syslog("Woosync - Creating mail");
                                             $ret = $dBInvoice->fetch($dBInvoice->id);
                                             $ret = $dBInvoice->fetch_thirdparty();
 
@@ -3200,6 +3217,7 @@ class eCommerceSynchro
                                             $outputlangs = $this->langs;
                                             $newlang = $conf->global->MAIN_MULTILANGS ? $dBInvoice->thirdparty->default_lang : '';
                                             if (!empty($newlang)) {
+                                                dol_syslog("Woosync - translate mail");
                                                 $outputlangs = new Translate('', $conf);
                                                 $outputlangs->setDefaultLang($newlang);
                                                 $outputlangs->loadLangs(array('commercial', 'bills', 'orders', 'contracts', 'members', 'propal', 'products', 'supplier_proposal', 'interventions'));
@@ -3214,14 +3232,23 @@ class eCommerceSynchro
                                             complete_substitutions_array($substitutionarray, $outputlangs, $dBInvoice, $parameters);
 
                                             // Get email template
+                                            dol_syslog("Woosync - get mail template " . $ecommerceSelectedPaymentGateway['mail_model_for_send_invoice']);
                                             $type_template = 'facture_send';
                                             $arraydefaultmessage = $formmail->getEMailTemplate($this->db, $type_template, $user, $outputlangs, $ecommerceSelectedPaymentGateway['mail_model_for_send_invoice']);
 
+                                              // PJE - debug loop
+                                            foreach ($arraydefaultmessage as $key => $value){
+                                              dol_syslog("Woosync - template - key " . $key . " - value " . $value);
+                                            }
+
                                             // Complete substitution array
+                                            dol_syslog("Woosync - complete substituion array");
                                             if (empty($substitutionarray['__REF__'])) {
+                                                dol_syslog("Woosync - payment url empty");
                                                 $paymenturl = '';
                                             } else {
                                                 // Set the online payment url link into __ONLINE_PAYMENT_URL__ key
+                                                  dol_syslog("Woosync - set payment url");
                                                 require_once DOL_DOCUMENT_ROOT . '/core/lib/payments.lib.php';
                                                 $outputlangs->load('paypal');
                                                 $paymenturl = getOnlinePaymentUrl(0, 'invoice', $substitutionarray['__REF__']);
@@ -3229,16 +3256,23 @@ class eCommerceSynchro
                                             $substitutionarray['__ONLINE_PAYMENT_URL__'] = $paymenturl;
 
                                             // Define subject / message
-                                            $message = str_replace('\n', "\n", $arraydefaultmessage['content']);
+                                            dol_syslog("Woosync - mail define subject and message");
+                                            // PJE - change $arraydefaultmessage['content'] in $arraydefaultmessage->content
+                                            $message = str_replace('\n', "\n", $arraydefaultmessage->content);
                                             // Deal with format differences between message and signature (text / HTML)
                                             if (dol_textishtml($message) && !dol_textishtml($substitutionarray['__USER_SIGNATURE__'])) {
+                                                dol_syslog("Woosync - mail update signature 1");
                                                 $substitutionarray['__USER_SIGNATURE__'] = dol_nl2br($substitutionarray['__USER_SIGNATURE__']);
                                             } else if (!dol_textishtml($message) && dol_textishtml($substitutionarray['__USER_SIGNATURE__'])) {
+                                                dol_syslog("Woosync - mail update signature 1");
                                                 $message = dol_nl2br($message);
                                             }
 
-                                            $subject = make_substitutions($arraydefaultmessage['topic'], $substitutionarray);
+                                            dol_syslog("Woosync - mail makeSubstitution subject");
+                                            // PJE - change $arraydefaultmessage['topic'] in $arraydefaultmessage->topic
+                                            $subject = make_substitutions($arraydefaultmessage->topic, $substitutionarray);
                                             $message = make_substitutions($message, $substitutionarray);
+                                            dol_syslog("Woosync - mail makeSubstitution Invoice");
                                             if (method_exists($dBInvoice, 'makeSubstitution')) {
                                                 $subject = $dBInvoice->makeSubstitution($subject);
                                                 $message = $dBInvoice->makeSubstitution($message);
@@ -3261,12 +3295,15 @@ class eCommerceSynchro
 
                                             // Attach invoice file
                                             $formmail->trackid = $trackid;      // $trackid must be defined
+                                            dol_syslog("Woosync - check joinfile");
                                             $formmail->clear_attached_files();
-                                            if (!empty($arraydefaultmessage['joinfiles'])) {
-                                                $ref = dol_sanitizeFileName($dBInvoice->ref);
-                                                $fileparams = dol_most_recent_file($conf->facture->dir_output . '/' . $ref, preg_quote($ref, '/') . '[^\-]+');
-                                                $file = $fileparams['fullname'];
-                                                $formmail->add_attached_files($file, basename($file), dol_mimetype($file));
+                                            // PJE - change $arraydefaultmessage['joinfiles'] in $arraydefaultmessage->joinfiles
+                                            if (!empty($arraydefaultmessage->joinfiles)) {
+                                              dol_syslog("Woosync - list joinfiles");
+                                              $ref = dol_sanitizeFileName($dBInvoice->ref);
+                                              $fileparams = dol_most_recent_file($conf->facture->dir_output . '/' . $ref, preg_quote($ref, '/') . '[^\-]+');
+                                              $file = $fileparams['fullname'];
+                                               $formmail->add_attached_files($file, basename($file), dol_mimetype($file));
                                             }
                                             $attachedfiles = $formmail->get_attached_files();
                                             $filepath = $attachedfiles['paths'];
@@ -3276,6 +3313,7 @@ class eCommerceSynchro
                                             // Send mail (substitutionarray must be done just before this)
                                             require_once DOL_DOCUMENT_ROOT . '/core/class/CMailFile.class.php';
                                             $sendcontext = 'standard';
+                                            dol_syslog("Woosync - send mail final");
                                             $mailfile = new CMailFile($subject, $sendto, $from, $message, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext);
                                             if ($mailfile->error) {
                                                 $msg_error = $this->langs->trans('ECommerceSynchCommandeErrorWhenCreateInvoiceMailToSend', $ref_ext) . ' ' . $mailfile->error . (is_array($mailfile->errors) ? ';' . implode('; ', $mailfile->errors) : '');
@@ -3284,6 +3322,7 @@ class eCommerceSynchro
                                                 $error++;
                                             } else {
                                                 $result = $mailfile->sendfile();
+                                                dol_syslog("Woosync - mail sent");
                                                 if ($result) {
                                                     // Event send email
                                                     $sendtoid = array();
@@ -4807,4 +4846,3 @@ class eCommerceSynchro
         return -1;
     }
 }
-
